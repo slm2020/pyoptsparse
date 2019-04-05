@@ -523,6 +523,8 @@ class SNOPT(Optimizer):
             sol = self._createSolution(optTime, sol_inform, ff, xs)
 
             sol.pi = pi # store the lagrange multipliers in the solution
+            sol.sInf = sinf # sum of infeasibilities
+            sol.nInf = ninf # number of infeasibilities
 
         else:  # We are not on the root process so go into waiting loop:
             self._waitLoop()

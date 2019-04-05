@@ -27,4 +27,4 @@ options = {
 opt = NSGA2(options=options)
 sol = opt(optProb)
 
-print sol
+print(sol)

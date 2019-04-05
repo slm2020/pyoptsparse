@@ -889,6 +889,8 @@ def OPT(optName, *args, **kwargs):
         from .pyNLPY_AUGLAG.pyNLPY_AUGLAG import NLPY_AUGLAG as opt
     elif optName == 'alpso':
         from .pyALPSO.pyALPSO import ALPSO as opt
+    elif optName == 'mbh':
+        from .pyMBH.pyMBH import MBH as opt
     # elif optName == 'nomad':
     #     from .pyNOMAD.pyNOMAD import NOMAD as opt
     else:
