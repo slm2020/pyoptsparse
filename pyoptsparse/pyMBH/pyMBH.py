@@ -54,17 +54,24 @@ class MBH(Optimizer):
         defOpts = {
             'alpha': [float, 2.0],              # Pareto Distribution Alpha Parameter to Determine Hop Distribution
             'maxIter': [int, 1e12],             # Maximum Number of Trials
+            'stallIters': [int, 1e12],          # Maximum Trials Without Improvement
             'maxTime': [int, 3600],             # Maximum Run Time (s)
-            'optimizer': [Optimizer, None],     # Optimizer to be Used
-            'verbose': [bool, True],           # Flag to Print Useful Information
+            'stallTime': [int, 3600],           # Maximum Time Without Improved Solution
+            'optimizer': [Optimizer, None],     # Optimizer to be Used (Not yet implemented. Only works with SNOPT)
+            'verbose': [bool, True],            # Flag to Print Useful Information
 
         }
 
         informs = {
             10: 'iteration limit reached with feasible solution',
             11: 'iteration limit reached without feasible solution',
+            12: 'stall iteration limit reached with feasible solution',
+            13: 'stall iteration limit reached without feasible solution',
+
             20: 'time limit reached with feasible solution',
             21: 'time limit reached without feasible solution',
+            22: 'stall time limit reached with feasible solution',
+            23: 'stall time limit reached without feasible solution',
         }
         super(MBH, self).__init__('MBH', category, defOpts, informs, *args, **kwargs)
 
@@ -86,14 +93,8 @@ class MBH(Optimizer):
         Notes
         -----
         The kwargs are there such that the sens= argument can be
-        supplied (but ignored here in alpso)
+        supplied (but ignored here in mbh)
         """
-        # ======================================================================
-        # MBH - Objective/Constraint Values Function
-        # ======================================================================
-        # def objconfunc(x):
-        #     fobj, fcon, fail = self._masterFunc(x, ['fobj', 'fcon'])
-        #     return fobj, fcon
 
         # Save the optimization problem and finalize constraint
         # jacobian, in general can only do on root proc
@@ -101,33 +102,6 @@ class MBH(Optimizer):
         self.optProb.finalizeDesignVariables()
         self.optProb.finalizeConstraints()
         self._setInitialCacheValues()
-
-        # if len(optProb.constraints) == 0:
-        #     self.unconstrained = True
-        #
-        # xl, xu, xs = self._assembleContinuousVariables()
-        # xs = numpy.maximum(xs, xl)
-        # xs = numpy.minimum(xs, xu)
-        # n = len(xs)
-        # ff = self._assembleObjective()
-        # types = [0] * len(xs)
-        # oneSided = True
-        # if self.unconstrained:
-        #     m = 0
-        #     me = 0
-        # else:
-        #     indices, blc, buc, fact = self.optProb.getOrdering(
-        #         ['ne', 'le', 'ni', 'li'], oneSided=oneSided, noEquality=False)
-        #     m = len(indices)
-        #
-        #     self.optProb.jacIndices = indices
-        #     self.optProb.fact = fact
-        #     self.optProb.offset = buc
-        #     indices, __, __, __ = self.optProb.getOrdering(
-        #         ['ne', 'le'], oneSided=oneSided, noEquality=False)
-        #     me = len(indices)
-        #
-        # nobj = 1
 
         if self.optProb.comm.rank == 0:
 
@@ -140,31 +114,10 @@ class MBH(Optimizer):
             # get the options
             alpha = self.getOption('alpha')
             maxIter = self.getOption('maxIter')
+            stallIters = self.getOption('stallIters')
             maxTime = self.getOption('maxTime')
+            stallTime = self.getOption('stallTime')
             verbose = self.getOption('verbose')
-
-            # dyniI = self.getOption('dynInnerIter')
-            # if dyniI == 0:
-            #     self.setOption('minInnerIter', opt('maxInnerIter'))
-            #
-            # if not opt('stopCriteria') in [0, 1]:
-            #     raise Error('Incorrect Stopping Criteria Setting')
-            #
-            # if opt('fileout') not in [0, 1, 2, 3]:
-            #     raise Error('Incorrect fileout Setting')
-            #
-            # if opt('seed') == 0:
-            #     self.setOption('seed', time.time())
-
-            # As far as I can tell, there is no need for this bulk attribute.
-            # ALPSO calls the objconfunc iteratively for each particle in the
-            # swarm, so we can deal with them one at a time, just as the other
-            # optimizers.
-            # self.optProb.bulk = opt('SwarmSize')
-
-
-
-            #optProbRun = Optimization(optProb.name, optProb.objFun)
 
             # initialize some variables
             best_objective = 1e20               # best objective function value
@@ -173,7 +126,6 @@ class MBH(Optimizer):
             best_sol = None                     # best solution from optimizer
             solution_found = False              # if a feasible solution was found or not
             trial = 0                           # number of trials
-            rand = 0                            # random number to perturb the variables
 
             # make dict of initial variable values:
             for name, var_list in iteritems(optProb.variables):
@@ -184,13 +136,13 @@ class MBH(Optimizer):
 
                 best_xStar[name] = tmp
 
-
-
             # Run MBH
             t0 = time.time()
+            stall_t0 = t0
+            stall_iters = 0
+            stall_time = 0
 
-            # PURTURBING VARIABLES IS BROKEN WITH GROUP VARIABLES
-            while time.time() - t0 < maxTime and trial < maxIter:
+            while time.time() - t0 < maxTime and trial < maxIter and stall_time < stallTime and stall_iters < stallIters:
 
                 if verbose:
                     print('\n-------------------------\n')
@@ -198,10 +150,8 @@ class MBH(Optimizer):
                     print('Best Objective:', best_objective)
                     print('Best xStar:', best_xStar)
 
-                # blx, bux, xs = self._assembleContinuousVariables()
-
                 # perturb inputs if trial > 0
-                if trial > -1:
+                if trial > 0:
                     for name, var_list in iteritems(optProb.variables):
 
                         for v in var_list:
@@ -228,13 +178,12 @@ class MBH(Optimizer):
                 opt = OPT('snopt')
                 sol = opt(optProb, sens=sens)
 
-
-                # get solution
-                sub_objective = sol.fStar
-                sub_inform = sol.optInform['value'][0]
-                sub_sinf = sol.sInf[0]
-                sub_ninf = sol.nInf
-                sub_xStar = sol.xStar
+                # get solution information
+                sub_objective = sol.fStar               # objective value
+                sub_inform = sol.optInform['value'][0]  # snopt inform value
+                sub_sinf = sol.sInf[0]                  # sum of infeasiblities
+                sub_ninf = sol.nInf                     # number of infeasibilities
+                sub_xStar = sol.xStar                   # solution x star
 
                 if verbose:
                     print("sub_objective:", sub_objective)
@@ -249,12 +198,14 @@ class MBH(Optimizer):
                     best_objective = sub_objective
                     print("\n*************************")
                     print("New Best Objective Found:", best_objective)
-                    print("\n*************************")
+                    print("*************************")
 
                     for name, var_list in iteritems(optProb.variables):
                         best_xStar[name] = sub_xStar[name]
 
                     best_sol = sol
+                    stall_t0 = time.time()
+                    stall_iters = 0
 
                 # no feasible solution has been found, but this one is better than the best known
                 elif sub_inform != 1 and sub_sinf < best_sinf and not solution_found:
@@ -262,12 +213,14 @@ class MBH(Optimizer):
                     best_sinf = sub_sinf
                     print("\n*************************")
                     print("More Feasible Solution Found:", best_objective)
-                    print("\n*************************")
+                    print("*************************")
 
                     for name, var_list in iteritems(optProb.variables):
                         best_xStar[name] = sub_xStar[name]
 
                     best_sol = sol
+                    stall_t0 = time.time()
+                    stall_iters = 0
 
                 # reset optProb variables to best_xStar values, whether updated or not
                 for name, var_list in iteritems(optProb.variables):
@@ -277,27 +230,15 @@ class MBH(Optimizer):
                         optProb.variables[name][tmp].value = i
                         tmp += 1
 
-                #exit()
                 trial += 1
+                stall_iters +=1
+                stall_time = time.time() - stall_t0
 
 
-
-
-            # opt_x, opt_f, opt_g, opt_lambda, nfevals, rseed = self.alpso.alpso(
-            #     n, m, me, types, xs, xl, xu, opt('SwarmSize'), opt('HoodSize'),
-            #     opt('HoodModel'), opt('maxOuterIter'), opt('maxInnerIter'),
-            #     opt('minInnerIter'), opt('stopCriteria'), opt('stopIters'),
-            #     opt('etol'), opt('itol'), opt('rtol'), opt('atol'), opt('dtol'),
-            #     opt('printOuterIters'), opt('printInnerIters'), opt('rinit'),
-            #     opt('vinit'), opt('vmax'), opt('c1'), opt('c2'), opt('w1'),
-            #     opt('w2'), opt('ns'), opt('nf'), opt('vcrazy'), opt('fileout'),
-            #     opt('filename'), None, None, opt('seed'),
-            #     opt('Scaling'), opt('HoodSelf'), objconfunc)
-            optTime = time.time() - t0
-
-            # Broadcast a -1 to indcate NSGA2 has finished
+            # not sure when we might use this
             self.optProb.comm.bcast(-1, root=0)
 
+            # To Do: Create MBH solution
             # Store Results
             sol_inform = {}
             # sol_inform['value'] = inform

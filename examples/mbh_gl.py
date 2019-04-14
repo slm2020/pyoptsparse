@@ -4,16 +4,13 @@ import numpy as np
 import argparse
 from pyoptsparse import Optimization, OPT
 
-
 # Solving the Gramacy & Lee Function:
 # http://benchmarkfcns.xyz/benchmarkfcns/gramacyleefcn.html
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--opt",help="optimizer",type=str, default='mbh')
 args = parser.parse_args()
-optOptions = {'alpha': 0.9, 'verbose': True, 'maxTime': 10}
-
+optOptions = {'alpha': 0.9, 'verbose': True, 'maxTime': 10, 'stallIters': 10}
 
 
 def objfuncLee(xdict):

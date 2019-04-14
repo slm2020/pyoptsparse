@@ -7,13 +7,12 @@ from pyoptsparse import Optimization, OPT
 
 # Solving the Egg Crate Function:
 # http://benchmarkfcns.xyz/benchmarkfcns/eggcratefcn.html
-
+# global min: 0.0 at x,y = 0,0
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--opt",help="optimizer",type=str, default='mbh')
 args = parser.parse_args()
-optOptions = {'alpha': 0.3, 'verbose': True, 'maxTime': 10, 'maxIter': 20}
-
+optOptions = {'alpha': 0.25, 'verbose': False, 'maxTime': 120, 'stallIters': 1000}
 
 
 def objfunc(xdict):

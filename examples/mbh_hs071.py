@@ -4,13 +4,14 @@ import numpy as np
 import argparse
 from pyoptsparse import Optimization, OPT
 
-# Solving the Gramacy & Lee Function:
-# http://benchmarkfcns.xyz/benchmarkfcns/gramacyleefcn.html
+# Solving  hs071
+# http://apmonitor.com/wiki/index.php/Apps/HockSchittkowski
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--opt",help="optimizer",type=str, default='mbh')
 args = parser.parse_args()
-optOptions = {'alpha': 2.0, 'verbose': True, 'maxTime': 1, 'maxIter': 3}
+optOptions = {'alpha': 2.0, 'verbose': True, 'maxTime': 1, 'maxIter': 10}
+
 
 def objfunc(xdict):
     x = xdict['xvars']
@@ -20,6 +21,7 @@ def objfunc(xdict):
     funcs['con2'] = x[0]*x[0] + x[1]*x[1] + x[2]*x[2] + x[3]*x[3]
     fail = False
     return funcs, fail
+
 
 def sens(xdict, funcs):
     x = xdict['xvars']
