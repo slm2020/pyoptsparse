@@ -5,41 +5,45 @@ import argparse
 from pyoptsparse import Optimization, OPT
 
 
-# Solving the Gramacy & Lee Function:
-# http://benchmarkfcns.xyz/benchmarkfcns/gramacyleefcn.html
+# Solving the Egg Crate Function:
+# http://benchmarkfcns.xyz/benchmarkfcns/eggcratefcn.html
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--opt",help="optimizer",type=str, default='mbh')
 args = parser.parse_args()
-optOptions = {'alpha': 0.9, 'verbose': True, 'maxTime': 10}
+optOptions = {'alpha': 0.3, 'verbose': True, 'maxTime': 10, 'maxIter': 20}
 
 
 
-def objfuncLee(xdict):
+def objfunc(xdict):
     x = xdict['x']
+    y = xdict['y']
     funcs = dict()
-    funcs['obj'] = np.sin(10*np.pi*x)/(2*x) + (x-1)**4
+    funcs['obj'] = x**2 + y**2 + 25*(np.sin(x)**2 + np.sin(y)**2)
     fail = False
     return funcs, fail
 
 
-def sensLee(xdict, funcs):
+def sens(xdict, funcs):
     x = xdict['x']
+    y = xdict['y']
     funcsSens = dict()
-    funcsSens['obj'] = {'x': np.array(
-            [
-                -np.sin(10*np.pi*x)/(2*x**2) + 4*(x-1)**3 + 5*np.pi*np.cos(10*np.pi*x)/x
-            ])}
+    funcsSens['obj'] = {
+        'x': np.array([2*(x + 25* np.sin(x) * np.cos(x))]),
+        'y': np.array([2*(y + 25* np.sin(y) * np.cos(y))]),
+
+    }
     fail = False
     return funcsSens, fail
 
 
 # Optimization Object
-optProb = Optimization('Lee Problem', objfuncLee)
+optProb = Optimization('Lee Problem', objfunc)
 
 # Design Variables
-optProb.addVar('x', 'c', value=2.5, lower=-0.5, upper=2.5)
+optProb.addVar('x', 'c', value=-5, lower=-5, upper=5)
+optProb.addVar('y', 'c', value=-5, lower=-5, upper=5)
 
 # Objective
 optProb.addObj('obj')
@@ -51,7 +55,7 @@ print(optProb)
 opt = OPT(args.opt, options=optOptions)
 
 # Solution
-sol = opt(optProb, sens=sensLee)
+sol = opt(optProb, sens=sens)
 
 # Check Solution
 print(sol)

@@ -21,7 +21,7 @@ from __future__ import print_function
 # Standard Python modules
 # =============================================================================
 import time
-from copy import deepcopy
+from collections import Iterable
 
 # =============================================================================
 # External Python modules
@@ -38,7 +38,7 @@ from ..pyOpt_error import Error
 
 
 # =============================================================================
-# ALPSO Optimizer Class
+# MBH Optimizer Class
 # =============================================================================
 class MBH(Optimizer):
     """
@@ -56,6 +56,7 @@ class MBH(Optimizer):
             'maxIter': [int, 1e12],             # Maximum Number of Trials
             'maxTime': [int, 3600],             # Maximum Run Time (s)
             'optimizer': [Optimizer, None],     # Optimizer to be Used
+            'verbose': [bool, True],           # Flag to Print Useful Information
 
         }
 
@@ -88,7 +89,7 @@ class MBH(Optimizer):
         supplied (but ignored here in alpso)
         """
         # ======================================================================
-        # ALPSO - Objective/Constraint Values Function
+        # MBH - Objective/Constraint Values Function
         # ======================================================================
         # def objconfunc(x):
         #     fobj, fcon, fail = self._masterFunc(x, ['fobj', 'fcon'])
@@ -128,7 +129,6 @@ class MBH(Optimizer):
         #
         # nobj = 1
 
-
         if self.optProb.comm.rank == 0:
 
             # Set history/hotstart/coldstart
@@ -136,6 +136,12 @@ class MBH(Optimizer):
 
             # Setup argument list values
             options = self.getOption
+
+            # get the options
+            alpha = self.getOption('alpha')
+            maxIter = self.getOption('maxIter')
+            maxTime = self.getOption('maxTime')
+            verbose = self.getOption('verbose')
 
             # dyniI = self.getOption('dynInnerIter')
             # if dyniI == 0:
@@ -156,33 +162,72 @@ class MBH(Optimizer):
             # optimizers.
             # self.optProb.bulk = opt('SwarmSize')
 
-            # Run ALPSO
-            t0 = time.time()
+
 
             #optProbRun = Optimization(optProb.name, optProb.objFun)
-            best_objective = 1e20
-            best_sinf = 1e20
-            best_x = None
-            solution_found = False
-            while time.time() - t0 < 1:
 
-                # perturb inputs
-                rand = np.random.pareto(0.25) * np.random.choice([-1,1])
-                print('Pareto Random Number:', rand)
-                print('Best Objective:', best_objective)
-                blx, bux, xs = self._assembleContinuousVariables()
+            # initialize some variables
+            best_objective = 1e20               # best objective function value
+            best_sinf = 1e20                    # best sum of infeasibilities
+            best_xStar = dict()                 # initialize the best decision vector as the initial guess
+            best_sol = None                     # best solution from optimizer
+            solution_found = False              # if a feasible solution was found or not
+            trial = 0                           # number of trials
+            rand = 0                            # random number to perturb the variables
 
-                for name, var_list in iteritems(optProb.variables):
-                    #print(name,var_list)
-                    #print(optProb.variables[name][0].value)
-                    val = optProb.variables[name][0].value
-                    new_val = val + (rand/100) * val
-                    optProb.variables[name][0].value = new_val
-                    print("val", val, "new_val", new_val)
+            # make dict of initial variable values:
+            for name, var_list in iteritems(optProb.variables):
 
+                tmp = []
+                for v in optProb.variables[name]:
+                    tmp.append(v.value)
+
+                best_xStar[name] = tmp
+
+
+
+            # Run MBH
+            t0 = time.time()
+
+            # PURTURBING VARIABLES IS BROKEN WITH GROUP VARIABLES
+            while time.time() - t0 < maxTime and trial < maxIter:
+
+                if verbose:
+                    print('\n-------------------------\n')
+                    print('Trial Number:', trial)
+                    print('Best Objective:', best_objective)
+                    print('Best xStar:', best_xStar)
+
+                # blx, bux, xs = self._assembleContinuousVariables()
+
+                # perturb inputs if trial > 0
+                if trial > -1:
+                    for name, var_list in iteritems(optProb.variables):
+
+                        for v in var_list:
+
+                            if verbose:
+                                print('Variable:', v.value)
+
+
+                            rand = np.random.pareto(alpha) * np.random.choice([-1, 1])
+                            if verbose:
+                                print('Random Number:', rand)
+
+                            val = v.value
+                            new_val = val + (rand/100) * val                # perturb the variable value
+                            v.value = new_val                               # set the variable value
+
+                            if verbose:
+                                print('New Variable:', v.value)
+
+
+
+                #quit()
                 # run problem
                 opt = OPT('snopt')
                 sol = opt(optProb, sens=sens)
+
 
                 # get solution
                 sub_objective = sol.fStar
@@ -191,38 +236,49 @@ class MBH(Optimizer):
                 sub_ninf = sol.nInf
                 sub_xStar = sol.xStar
 
-                print("sub_obj", sub_objective)
-                print("sub_inform", sub_inform)
-                print("sub_sinf", sub_sinf)
-                print("sub_xstar", sub_xStar)
+                if verbose:
+                    print("sub_objective:", sub_objective)
+                    print("sub_inform:", sub_inform)
+                    print("sub_sinf:", sub_sinf)
+                    print("sub_xstar:", sub_xStar)
 
-
+                # an optimal solution is found
                 if sub_inform == 1 and sub_objective < best_objective:
 
                     solution_found = True
                     best_objective = sub_objective
+                    print("\n*************************")
                     print("New Best Objective Found:", best_objective)
-                    best_xStar = sub_xStar
+                    print("\n*************************")
 
                     for name, var_list in iteritems(optProb.variables):
-                        optProb.variables[name][0].value = best_xStar[name]
+                        best_xStar[name] = sub_xStar[name]
 
+                    best_sol = sol
 
-
+                # no feasible solution has been found, but this one is better than the best known
                 elif sub_inform != 1 and sub_sinf < best_sinf and not solution_found:
 
                     best_sinf = sub_sinf
+                    print("\n*************************")
                     print("More Feasible Solution Found:", best_objective)
-                    best_xStar = sub_xStar
+                    print("\n*************************")
 
                     for name, var_list in iteritems(optProb.variables):
-                        optProb.variables[name][0].value = best_xStar[name]
+                        best_xStar[name] = sub_xStar[name]
 
+                    best_sol = sol
 
-                else:
-                    # reset
-                    for name, var_list in iteritems(optProb.variables):
-                        optProb.variables[name][0].value = val
+                # reset optProb variables to best_xStar values, whether updated or not
+                for name, var_list in iteritems(optProb.variables):
+
+                    tmp = 0
+                    for i in np.nditer(best_xStar[name]):
+                        optProb.variables[name][tmp].value = i
+                        tmp += 1
+
+                #exit()
+                trial += 1
 
 
 
@@ -257,6 +313,8 @@ class MBH(Optimizer):
 
         # Communication solution and return
         sol = self._communicateSolution(sol)
+
+        sol = best_sol
 
         return sol
 
