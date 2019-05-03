@@ -20,6 +20,8 @@ def objfunc(xdict):
     y = xdict['y']
     funcs = dict()
     funcs['obj'] = x**2 + y**2 + 25*(np.sin(x)**2 + np.sin(y)**2)
+    funcs['con1'] = x
+
     fail = False
     return funcs, fail
 
@@ -33,6 +35,8 @@ def sens(xdict, funcs):
         'y': np.array([2*(y + 25* np.sin(y) * np.cos(y))]),
 
     }
+    funcsSens['con1'] = {'x': np.array([1])}
+
     fail = False
     return funcsSens, fail
 
@@ -41,11 +45,15 @@ def sens(xdict, funcs):
 optProb = Optimization('Egg Crate Problem', objfunc)
 
 # Design Variables
-optProb.addVar('x', 'c', value=-50, lower=-50, upper=50)
+optProb.addVar('x', 'c', value=50, lower=-50, upper=50)
 optProb.addVar('y', 'c', value=-50, lower=-50, upper=50)
 
 # Objective
 optProb.addObj('obj')
+
+# Constraints
+# optProb.addCon('con1', lower=25, upper=1e19)
+optProb.addCon('con1', upper=-10)
 
 # Check optimization problem:
 print(optProb)

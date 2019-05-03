@@ -1,9 +1,9 @@
 # /bin/env python
 """
 pyMBH - A pyOptSparse interface to Monotonic Basin Hopping
-work with sparse optimization problems.
+to work with sparse optimization problems.
 
-Copyright (c) 2019-2020 by Steven L. McCarty
+Copyright (c) 2019 by Steven L. McCarty
 All rights reserved.
 
 Developers:
@@ -57,6 +57,7 @@ class MBH(Optimizer):
             'stallIters': [int, 1e12],          # Maximum Trials Without Improvement
             'maxTime': [int, 3600],             # Maximum Run Time (s)
             'stallTime': [int, 3600],           # Maximum Time Without Improved Solution
+            'stallTol': [float, 1e-16],         # Minimum objective improvement required to reset stall counters
             'optimizer': [Optimizer, None],     # Optimizer to be Used (Not yet implemented. Only works with SNOPT)
             'verbose': [bool, True],            # Flag to Print Useful Information
 
@@ -117,6 +118,7 @@ class MBH(Optimizer):
             stallIters = self.getOption('stallIters')
             maxTime = self.getOption('maxTime')
             stallTime = self.getOption('stallTime')
+            stallTol = self.getOption('stallTol')
             verbose = self.getOption('verbose')
 
             # initialize some variables
@@ -159,7 +161,6 @@ class MBH(Optimizer):
                             if verbose:
                                 print('Variable:', v.value)
 
-
                             rand = np.random.pareto(alpha) * np.random.choice([-1, 1])
                             if verbose:
                                 print('Random Number:', rand)
@@ -171,9 +172,6 @@ class MBH(Optimizer):
                             if verbose:
                                 print('New Variable:', v.value)
 
-
-
-                #quit()
                 # run problem
                 opt = OPT('snopt')
                 sol = opt(optProb, sens=sens)
@@ -195,6 +193,7 @@ class MBH(Optimizer):
                 if sub_inform == 1 and sub_objective < best_objective:
 
                     solution_found = True
+                    delta_objective = abs(best_objective - sub_objective)
                     best_objective = sub_objective
                     print("\n*************************")
                     print("New Best Objective Found:", best_objective)
@@ -204,8 +203,10 @@ class MBH(Optimizer):
                         best_xStar[name] = sub_xStar[name]
 
                     best_sol = sol
-                    stall_t0 = time.time()
-                    stall_iters = 0
+
+                    if delta_objective > stallTol:
+                        stall_t0 = time.time()
+                        stall_iters = 0
 
                 # no feasible solution has been found, but this one is better than the best known
                 elif sub_inform != 1 and sub_sinf < best_sinf and not solution_found:
